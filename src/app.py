@@ -14,11 +14,14 @@ app = Dash()
 server = app.server
 external_stylesheets = ['mobile.css']
 
+###################################################################################################
+#
+###################################################################################################
 train = pd.read_csv("Data/TrainSet.csv").dropna()
 test = pd.read_csv("Data/TestSet.csv")
-test["NII"] = [None] * len(test)
-
 target = pd.read_csv("Data/NetInterestIncome.csv")
+
+test["NII"] = [None] * len(test)
 
 target['DATE'] = pd.to_datetime(target['DATE'])
 
@@ -31,22 +34,24 @@ target.columns = ["NII", "Date"]
 
 merged = pd.merge(train, target, how = "inner", on = "Date")
 merged = pd.concat([merged, test])
+###################################################################################################
+#
+###################################################################################################
 
 app.layout = [
     html.Div(children = [
 
         html.H1(children = 'Comprehensive Capital Analysis and Review', style = {'textAlign' : 'center', "text-decoration": "underline"}),
 
-        html.Div(children = [html.Label("Select Macro Economic Variable: "), dcc.Dropdown(train.columns[2:], value = 'Real GDP growth', id = 'dropdown-selection')], style = {'margin':'auto', 'width': '20%'}),
+        html.Div(children = [html.Label("Select Macro Economic Variable: "), dcc.Dropdown(train.columns[2:], value = 'House Price Index (Level)', id = 'dropdown-selection')], style = {'margin':'auto', 'width': '20%'}),
         html.Div(dcc.Graph(id = 'mev-figure'), style = {'margin':'auto', 'width': '75%'}),
 
         html.Div(dcc.Graph(id = 'autoregressive-model'), style = {'margin':'auto', 'width': '75%'}),
 
-        html.Div(dash_table.DataTable(merged.to_dict('records'), [{"name": i, "id": i} for i in merged.columns])),
+        # html.Div(dash_table.DataTable(merged.to_dict('records'), [{"name": i, "id": i} for i in merged.columns])),
 
     ], style = {'background-color' : 'whitesmoke'})
 ]
-
 
 @callback(Output('mev-figure', 'figure'), Input('dropdown-selection', 'value'))
 def plot_data(col):
@@ -77,7 +82,7 @@ def plot_data(col):
         )
     )
 
-    return fig.update_layout(template = 'seaborn', paper_bgcolor = 'rgba(0, 0, 0, 0)')
+    return fig.update_layout(title = "Macro Economic Variable", xaxis_title = "Date", yaxis_title = "", template = 'seaborn', paper_bgcolor = 'rgba(0, 0, 0, 0)')
 
 @callback(Output('autoregressive-model', 'figure'), Input('dropdown-selection', 'value'))
 def fit_model(col):
@@ -106,22 +111,40 @@ def fit_model(col):
     X_test = X_test.pct_change(1).dropna()
 
     y_train =  merged[merged["Scenario Name"] == "Actual"]["NII"].iloc[4:].pct_change(1).dropna()
-    y_test =  merged[merged["Scenario Name"] == "Actual"]["NII"].pct_change(1).dropna()
 
     reg = LinearRegression().fit(X_train, y_train)
     pred = reg.predict(X_test)
+
+    train_r2 = reg.score(X_train, y_train)
 
     fig = go.Figure()
 
     fig.add_trace(
         go.Scatter(
-            x = pred,
-            y = y_test,
-            mode = "markers"
+            x = train["Date"],
+            y = train["NII"],
+            marker_color = 'blue',
+            name = "Net Interest Income"
         )
     )
 
-    return fig.update_layout(xaxis_title = "Prediction", yaxis_title = "True", template = 'seaborn', paper_bgcolor = 'rgba(0, 0, 0, 0)')
+    tmp = train["NII"].iloc[-1]
+    normalized_pred = []
+
+    for i in range(len(pred)):
+        tmp += tmp * pred[i]
+        normalized_pred.append(tmp)
+
+    fig.add_trace(
+        go.Scatter(
+            x = test["Date"],
+            y = normalized_pred,
+            marker_color = 'red',
+            name = "Severely Adverse"
+        )
+    )
+
+    return fig.update_layout(title = "Stress Test Scenario " + str(round(train_r2, 4)), xaxis_title = "Date", yaxis_title = "NET INTEREST INCOME", template = 'seaborn', paper_bgcolor = 'rgba(0, 0, 0, 0)')
 
 if __name__ == '__main__':
     app.run(debug = True)
